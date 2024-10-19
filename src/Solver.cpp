@@ -76,6 +76,19 @@ bool Solver::add(std::vector<Lit> lits) {
 
 bool Solver::addClauseImpl(std::vector<Lit> lits, ClauseOrigin origin) {
 
+  if (origin != LEARN) {
+    int old_max_id = max_var_id_;
+    for (auto lit : lits) {
+      if (lit.getVar() > max_var_id_) {
+        max_var_id_ = lit.getVar();
+      }
+    }
+
+    if (max_var_id_ > old_max_id && max_var_id_ + 1 > level_.size()) {
+      extandVar(1.3 * (max_var_id_ + 1) + 5);
+    }
+  }
+
   if (origin == FORMULA) {
     auto s = simplifyForInput(lits);
     if (s != B_UN_KNOWN) {
@@ -88,19 +101,6 @@ bool Solver::addClauseImpl(std::vector<Lit> lits, ClauseOrigin origin) {
     return false;
   }
 
-  if (origin != LEARN) {
-
-    int old_max_id = max_var_id_;
-    for (auto lit : lits) {
-      if (lit.getVar() > max_var_id_) {
-        max_var_id_ = lit.getVar();
-      }
-    }
-
-    if (max_var_id_ > old_max_id && max_var_id_ + 1 > level_.size()) {
-      extandVar(1.3 * (max_var_id_ + 1) + 5);
-    }
-  }
   if (1 == lits.size()) {
     addUnCheckLit(level_[0], nullptr);
     return true;
@@ -121,6 +121,10 @@ bool Solver::addClauseImpl(std::vector<Lit> lits, ClauseOrigin origin) {
 //todo
 void Solver::backToLevel(int level) {
   assert(tail_limit_.size() >= level);
+  if (tail_limit_.size() == level) {
+    return;
+  }
+
   tail_limit_.resize(level);
 
   if (level == 0) {
@@ -133,6 +137,7 @@ void Solver::backToLevel(int level) {
     auto lit = tail_[i];
     value_[lit.getVar()] = B_UN_KNOWN;
   }
+
   tail_.resize(loc);
 
 }

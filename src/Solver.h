@@ -24,7 +24,7 @@ static inline BValue operator~(BValue v) {
   }
 }
 
-int weakValue(BValue v) {
+static inline int weakValue(BValue v) {
   return v == B_FASE ? 0 : 1;
 }
 
@@ -62,19 +62,19 @@ class Lit {
 
 };
 
-bool operator==(const Lit lhs, const Lit rhs) {
+static inline bool operator==(const Lit lhs, const Lit rhs) {
   return lhs.getSign() == rhs.getSign() && lhs.getVar() == rhs.getVar();
 }
 
-bool operator!=(const Lit lhs, const Lit rhs) {
+static inline bool operator!=(const Lit lhs, const Lit rhs) {
   return lhs.getSign() != rhs.getSign() || lhs.getVar() != rhs.getVar();
 }
 
-Lit operator~(Lit lit) {
+static inline Lit operator~(Lit lit) {
   return Lit(lit.getVar(), !lit.getSign());
 }
 
-int weakValue(Lit lit, BValue v) {
+static inline int weakValue(Lit lit, BValue v) {
   if (lit.getSign()) {
     return v == B_TRUE ? 0 : 1;
   }
@@ -166,7 +166,6 @@ class Solver {
 
 
 
-
   SolverStatus solver_status_{UN_SOLVE};
 
  public:
@@ -180,11 +179,17 @@ class Solver {
     return max_var_id_ + 1;
   }
 
+  int getClauseNum() const {
+    return clauses_.size();
+  }
+
+  SolverStatus solve();
+
+  std::vector<BValue> getModel() const;
+
   SolverStatus getStatus() const {
     return solver_status_;
   }
-
-  std::vector<BValue> getModel() const;
 
   bool isGood() const {
     return getStatus() != UN_SAT;
