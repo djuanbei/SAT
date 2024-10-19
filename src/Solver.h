@@ -5,6 +5,7 @@
 #ifndef SAT_SRC_SOLVER_H_
 #define SAT_SRC_SOLVER_H_
 #include <cassert>
+#include <iostream>
 #include <map>
 #include <vector>
 
@@ -22,6 +23,8 @@ static inline BValue operator~(BValue v) {
     return B_UN_KNOWN;
   }
 }
+
+std::ostream &operator<<(std::ostream &out, const BValue &v);
 
 static inline int weakValue(BValue v) { return v == B_FASE ? 0 : 1; }
 

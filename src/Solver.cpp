@@ -3,7 +3,8 @@
 //
 
 #include "Solver.h"
-
+//
+#include <iostream>
 using namespace std;
 using namespace sat;
 
@@ -43,13 +44,28 @@ BValue simplifyClause(std::vector<Lit> &lits) {
 }
 } // namespace
 
+namespace sat {
+std::ostream &operator<<(std::ostream &out, const BValue &v) {
+  switch (v) {
+
+  case B_TRUE:
+    return out << "T";
+  case B_FASE:
+    return out << "F";
+  case B_UN_KNOWN:
+    return out << "U";
+  }
+  return out;
+}
+} // namespace sat
+
 bool Clause::valid() const {
 
   if (value_.size() < 2) {
     return false;
   }
   for (auto lit : value_) {
-    if (lit.isValid()) {
+    if (!lit.isValid()) {
       return false;
     }
   }
@@ -276,7 +292,7 @@ Lit Solver::chooseOneLit() {
   while (!var_order_.empty()) {
     auto last = var_order_.back();
     var_order_.pop_back();
-    if (value_[last] != B_UN_KNOWN) {
+    if (value_[last] == B_UN_KNOWN) {
       if (rand() % 2 == 1) {
         return Lit(last, true);
       } else {
@@ -299,7 +315,7 @@ bool Solver::addClauseImpl(std::vector<Lit> lits, ClauseOrigin origin) {
         max_var_id_ = lit.getVar();
       }
     }
-    for (auto v = old_max_id; v < max_var_id_; v++) {
+    for (auto v = old_max_id == 0 ? 0 : old_max_id + 1; v <= max_var_id_; v++) {
       var_order_.push_back(v);
     }
     if (max_var_id_ > old_max_id && max_var_id_ + 1 > level_.size()) {
@@ -333,6 +349,7 @@ Clause *Solver::addClause(const std::vector<Lit> &lits, ClauseOrigin origin) {
   assert(lits.size() > 1);
 
   auto cl = new Clause(lits, origin);
+  assert(cl->valid());
   clauses_.push_back(cl);
   Watcher w1(cl, lits[1]);
   Watcher w2(cl, lits[0]);
@@ -384,12 +401,11 @@ BValue Solver::simplifyForInput(std::vector<Lit> &lits) const {
       lits.clear();
       return B_TRUE;
     } else if (value_[jt->getVar()] != (~(jt->getVarBValue()))) {
+      *it = *jt;
       it++;
-      *it = *it;
     }
     jt++;
   }
-  it++;
   lits.resize(it - lits.begin());
   return lits.empty() ? B_FASE : B_UN_KNOWN;
 }
