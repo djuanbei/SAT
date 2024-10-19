@@ -96,7 +96,8 @@ bool Solver::addClauseImpl(std::vector<Lit> lits, ClauseOrigin origin) {
         max_var_id_ = lit.getVar();
       }
     }
-    if (max_var_id_ > old_max_id) {
+
+    if (max_var_id_ > old_max_id && max_var_id_ + 1 > level_.size()) {
       extandVar(1.3 * (max_var_id_ + 1) + 5);
     }
   }
@@ -114,6 +115,25 @@ bool Solver::addClauseImpl(std::vector<Lit> lits, ClauseOrigin origin) {
   watch_list_[~lits[1]].push_back(w2);
 
   return true;
+
+}
+
+//todo
+void Solver::backToLevel(int level) {
+  assert(tail_limit_.size() >= level);
+  tail_limit_.resize(level);
+
+  if (level == 0) {
+    return;
+  }
+
+  int loc = tail_limit_[level - 1];
+
+  for (size_t i = tail_.size() - 1; i >= loc; i--) {
+    auto lit = tail_[i];
+    value_[lit.getVar()] = B_UN_KNOWN;
+  }
+  tail_.resize(loc);
 
 }
 //// return false iff it find the lits is false
@@ -144,7 +164,7 @@ BValue Solver::simplifyForInput(std::vector<Lit> &lits) const {
 
 void Solver::extandVar(int new_max_num) {
   assert(new_max_num > max_var_id_);
-  max_var_id_ = new_max_num - 1;
+
   value_.resize(new_max_num, B_UN_KNOWN);
   level_.resize(new_max_num, -1);
   reason_.resize(2 * new_max_num, nullptr);
