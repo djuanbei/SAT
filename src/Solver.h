@@ -107,18 +107,14 @@ class Watcher {
 
   Clause *clause_{nullptr};
 
-  Lit other_watch_lit_;
-
-  bool is_remove_{false};
+  Lit blocker_;
 
 public:
   Watcher() = default;
-  Watcher(Clause *c, Lit other) : clause_(c), other_watch_lit_(other) {}
+  Watcher(Clause *c, Lit other) : clause_(c), blocker_(other) {}
   Clause *getClause() const { return clause_; }
 
-  Lit getOther() const { return other_watch_lit_; }
-  void remove() { is_remove_ = true; }
-  bool isRemove() const { return is_remove_; }
+  Lit getBlocker() const { return blocker_; }
 
   bool valid() const { return clause_; }
 
@@ -127,16 +123,6 @@ private:
 
 enum SolverStatus { UN_SOLVE, SAT, UN_SAT };
 
-static inline void removeWatch(std::vector<Watcher> &ws, const Clause *cl) {
-  for (auto &w : ws) {
-    if (!w.isRemove() && w.getClause() == cl) {
-      w.remove();
-      // ws.erase(it);
-      return;
-    }
-  }
-}
-
 class Solver {
 
   int max_var_id_{0};
@@ -144,9 +130,9 @@ class Solver {
   std::vector<Clause *> clauses_;
   std::map<Lit, std::vector<Watcher>> watch_list_;
 
-  int tail_head_{0};
-  std::vector<Lit> tail_;
-  std::vector<int> tail_limit_;
+  int trail_head_{0};
+  std::vector<Lit> trail_;
+  std::vector<int> trail_limit_;
   std::vector<BValue> value_; // Var ->
   std::vector<int> level_;    // Var ->
   std::vector<int> var_order_;
@@ -182,13 +168,13 @@ private:
 
   void extandVar(int new_max_num);
 
-  int getCurrentLevel() const { return tail_limit_.size(); }
+  int getCurrentLevel() const { return trail_limit_.size(); }
 
   //// return false iff it find the lits is false
   BValue simplifyForInput(std::vector<Lit> &lits) const;
 
   void addUnCheckLit(Lit lit, const Clause *cl) {
-    tail_.push_back(lit);
+    trail_.push_back(lit);
     value_[value_[lit.getVar()]] = lit.getVarBValue();
     level_[lit.getVar()] = getCurrentLevel();
     reason_[lit.getIndex()] = cl;
@@ -196,7 +182,7 @@ private:
 
   Clause *propagation();
 
-  std::pair<std::vector<Lit>, int> analysis(const Clause *conf);
+  std::pair<std::vector<Lit>, int> analyze(const Clause *conf);
 
   Lit chooseOneLit();
 
@@ -205,6 +191,7 @@ private:
   void backToLevel(int level);
 
   BValue getBValue(int v) const { return value_[v]; }
+
   bool isFalse(Lit lit) const {
     if (lit.getSign()) {
       return value_[lit.getVar()] == B_TRUE;
@@ -220,7 +207,7 @@ private:
 
   bool isInitGood() const { return isGood() && isInitStatus(); }
 
-  bool isInitStatus() const { return tail_limit_.empty(); }
+  bool isInitStatus() const { return trail_limit_.empty(); }
   bool addClauseImpl(std::vector<Lit> lits, ClauseOrigin origin = FORMULA);
 
   Clause *addClause(const std::vector<Lit> &lits, ClauseOrigin origin);

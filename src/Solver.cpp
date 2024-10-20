@@ -151,15 +151,20 @@ SolverStatus Solver::solveLimit(int number_conf) {
   while (conf_n < number_conf) {
     conf = propagation();
     if (conf) {
-      /// analysis
-      auto lean = analysis(conf);
+      /// analyze
+      auto lean = analyze(conf);
       if (lean.second < 0) {
         return UN_SAT;
       }
       backToLevel(lean.second);
-      auto lean_clause = addClause(lean.first, LEARN);
-      ///
-      addUnCheckLit(lean.first[0], lean_clause);
+      if (lean.first.size() > 1) {
+        auto lean_clause = addClause(lean.first, LEARN);
+        ///
+        addUnCheckLit(lean.first[0], lean_clause);
+      } else {
+        assert(0 == lean.second);
+        addUnCheckLit(lean.first[0], nullptr);
+      }
 
     } else {
       /// choose decide lit
@@ -176,116 +181,119 @@ SolverStatus Solver::solveLimit(int number_conf) {
 }
 
 Clause *Solver::propagation() {
-  while (tail_head_ < tail_.size()) {
-    auto lit = tail_[tail_head_];
+  Clause *confl{nullptr};
+  while (trail_head_ < trail_.size()) {
+    auto lit = trail_[trail_head_++];
     auto neg_lit = ~lit;
     Lit new_watch;
     auto &ws = watch_list_[lit];
+    auto it = ws.begin();
+    auto jt = ws.begin();
 
-    for (auto &w : ws) {
-      if (w.isRemove()) {
+    while (it != ws.end()) {
+      auto blocker = it->getBlocker();
+      if (getValue(blocker)) {
+        *jt++ = *it++;
         continue;
       }
-      if (getValue(w.getOther())) {
-        // have sat
-        continue;
-      }
-      auto watch_clause = w.getClause();
+
+      auto watch_clause = it->getClause();
+      it++;
 
       if (watch_clause->getValue()[0] == neg_lit) {
+        watch_clause->getValue()[0] = watch_clause->getValue()[1];
         watch_clause->getValue()[1] = neg_lit;
       }
-      // [2,...) lit find new water lit
-      size_t i = 2;
-      for (; i < watch_clause->getValue().size(); i++) {
-        if (!isFalse(watch_clause->getValue()[i])) {
-          break;
-        }
-      }
-      if (i < watch_clause->getValue().size()) {
-        new_watch = watch_clause->getValue()[i];
-        /// remove watch clause watch_clause in lit watch list
-        /// add watch_clause in  ~new_watch watch list
-        watch_clause->getValue()[1] = new_watch;
-        watch_clause->getValue()[i] = neg_lit;
 
-        // todo
-        removeWatch(ws, watch_clause);
+      assert(watch_clause->getValue()[1] == neg_lit);
 
-        watch_list_[~new_watch].emplace_back(watch_clause,
-                                             watch_clause->getValue()[0]);
+      auto first_lit = watch_clause->getValue()[0];
 
+      Watcher w = Watcher(watch_clause, first_lit);
+
+      if (first_lit != blocker && getValue(first_lit)) {
+        *jt++ = w;
         continue;
       }
-      // other watch value
-      auto o_v = watch_clause->getValue()[0].getVar();
 
-      if (B_UN_KNOWN == getBValue(o_v)) {
-        addUnCheckLit(o_v, watch_clause);
-      } else {
-        // find conflict clause
-        return watch_clause;
+      // [2,...) lit find new water lit
+      for (size_t k = 2; k < watch_clause->getValue().size(); k++) {
+        if (!isFalse(watch_clause->getValue()[k])) {
+
+          /// remove watch clause watch_clause in lit watch list
+          /// add watch_clause in  ~new_watch watch list
+          watch_clause->getValue()[1] = watch_clause->getValue()[k];
+          watch_clause->getValue()[k] = neg_lit;
+          watch_list_[~watch_clause->getValue()[1]].emplace_back(w);
+          goto NextClause;
+        }
       }
+      *jt++ = w;
+
+      if (isFalse(first_lit)) {
+        trail_head_ = trail_.size();
+        confl = watch_clause;
+        while (it != ws.end()) {
+          *jt++ = *it++;
+        }
+
+      } else {
+        addUnCheckLit(first_lit, watch_clause);
+      }
+    NextClause:;
     }
-    tail_head_++;
+
+    ws.resize(jt - ws.begin());
   }
 
-  return nullptr;
+  return confl;
 }
 
-std::pair<std::vector<Lit>, int> Solver::analysis(const Clause *conf) {
+std::pair<std::vector<Lit>, int> Solver::analyze(const Clause *conf) {
   assert(conf);
   assert(conf->valid());
-  std::vector<char> seen(max_var_id_ + 1, 0);
-  int high_level = -1;
 
-  for (auto lit : conf->getValue()) {
-    seen[lit.getVar()] = 1;
-    if (getLevel(lit.getVar()) > high_level) {
-
-      high_level = getLevel(lit.getVar());
-    }
-  }
-
-  if (0 == high_level) {
+  if (getLevel(conf->getValue()[0].getVar()) <= 0) {
     return {{}, -1};
   }
-  Lit high_level_lit;
-  for (size_t i = tail_.size(); i >= tail_limit_[high_level]; i--) {
-    auto lit = tail_[i];
 
-    if (!seen[lit.getVar()]) {
-      continue;
-    }
+  int pathC = 0;
+  Lit p{};
+  std::vector<char> seen(max_var_id_ + 1, 0);
+  std::vector<Lit> out_learn(1);
 
-    high_level_lit = lit;
+  int index = trail_.size() - 1;
 
-    seen[lit.getVar()] = 0;
-    auto rean_cl = reason_[lit.getIndex()];
-    if (rean_cl) {
-      for (size_t i = 1; i < rean_cl->getValue().size(); i++) {
-        auto tmp_lit = rean_cl->getValue()[i];
-        assert(!seen[tmp_lit.getVar()]);
-        seen[tmp_lit.getVar()] = 1;
+  do {
+    for (size_t j = (p.isValid() ? 1 : 0); j < conf->getValue().size(); j++) {
+      auto q = conf->getValue()[j];
+      if (!seen[q.getVar()] && getLevel(q.getVar()) > 0) {
+        seen[q.getVar()] = 1;
+        if (getLevel(q.getVar()) >= getCurrentLevel()) {
+          pathC++;
+        } else {
+          out_learn.push_back(q);
+        }
       }
     }
-  }
+    while (!seen[trail_[index--].getVar()])
+      ;
+    p = trail_[index + 1];
+    conf = reason_[p.getIndex()];
+    seen[p.getVar()] = 0;
+    pathC--;
+  } while (pathC > 0);
+  out_learn[0] = ~p;
 
-  std::vector<Lit> lean_clause;
-  lean_clause.push_back(~high_level_lit);
+  simplifyClause(out_learn);
   int second_high_leval = 0;
-
-  for (size_t v = 0; v < seen.size(); v++) {
-    if (seen[v]) {
-      if (getLevel(v) > second_high_leval) {
-        second_high_leval = v;
-      }
-
-      lean_clause.emplace_back(v, getBValue(v) == B_FASE);
+  for (size_t i = 1; i < out_learn.size(); i++) {
+    if (getLevel(out_learn[i].getVar()) > second_high_leval) {
+      second_high_leval = getLevel(out_learn[i].getVar());
     }
   }
 
-  return {lean_clause, second_high_leval};
+  return {out_learn, second_high_leval};
 }
 
 Lit Solver::chooseOneLit() {
@@ -304,7 +312,7 @@ Lit Solver::chooseOneLit() {
   return {};
 }
 
-void Solver::decide() { tail_limit_.push_back(tail_.size()); }
+void Solver::decide() { trail_limit_.push_back(trail_.size()); }
 
 bool Solver::addClauseImpl(std::vector<Lit> lits, ClauseOrigin origin) {
 
@@ -361,8 +369,8 @@ Clause *Solver::addClause(const std::vector<Lit> &lits, ClauseOrigin origin) {
 
 // todo
 void Solver::backToLevel(int level) {
-  assert(tail_limit_.size() >= level);
-  if (tail_limit_.size() == level) {
+  assert(trail_limit_.size() >= level);
+  if (trail_limit_.size() == level) {
     return;
   }
 
@@ -370,21 +378,21 @@ void Solver::backToLevel(int level) {
     return;
   }
 
-  for (size_t k = level; k < tail_limit_.size(); k++) {
-    var_order_.push_back(tail_[tail_limit_[k]].getVar());
+  for (size_t k = level; k < trail_limit_.size(); k++) {
+    var_order_.push_back(trail_[trail_limit_[k]].getVar());
   }
 
-  int loc = tail_limit_[level - 1];
+  int loc = trail_limit_[level - 1];
 
-  for (size_t i = tail_.size() - 1; i >= loc; i--) {
-    auto lit = tail_[i];
+  for (size_t i = trail_.size() - 1; i >= loc; i--) {
+    auto lit = trail_[i];
     value_[lit.getVar()] = B_UN_KNOWN;
   }
 
-  tail_limit_.resize(level);
+  trail_limit_.resize(level);
 
-  tail_.resize(loc);
-  tail_head_ = tail_.size();
+  trail_.resize(loc);
+  trail_head_ = trail_.size();
 }
 //// return false iff it find the lits is false
 BValue Solver::simplifyForInput(std::vector<Lit> &lits) const {
@@ -420,10 +428,10 @@ void Solver::extandVar(int new_max_num) {
 
 void Solver::resetStatus() {
   if (solver_status_ != UN_SAT) {
-    if (!tail_limit_.empty()) {
-      tail_.erase(tail_.begin() + tail_limit_[0], tail_.end());
+    if (!trail_limit_.empty()) {
+      trail_.erase(trail_.begin() + trail_limit_[0], trail_.end());
     }
-    tail_limit_.clear();
+    trail_limit_.clear();
     solver_status_ = UN_SOLVE;
   }
 }
@@ -432,7 +440,7 @@ std::vector<BValue> Solver::getModel() const {
   assert(getStatus() == SAT);
   if (getStatus() == SAT) {
     std::vector<BValue> model(getVarNum(), B_UN_KNOWN);
-    for (auto &lit : tail_) {
+    for (auto &lit : trail_) {
       model[lit.getVar()] = lit.getVarBValue();
     }
     return model;
