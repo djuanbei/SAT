@@ -188,7 +188,7 @@ private:
 
   void decide();
 
-  void backToLevel(int level);
+  void cancelUntil(int level);
 
   BValue getBValue(int v) const { return value_[v]; }
 

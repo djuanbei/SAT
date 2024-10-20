@@ -156,7 +156,7 @@ SolverStatus Solver::solveLimit(int number_conf) {
       if (lean.second < 0) {
         return UN_SAT;
       }
-      backToLevel(lean.second);
+      cancelUntil(lean.second);
       if (lean.first.size() > 1) {
         auto lean_clause = addClause(lean.first, LEARN);
         ///
@@ -368,7 +368,7 @@ Clause *Solver::addClause(const std::vector<Lit> &lits, ClauseOrigin origin) {
 }
 
 // todo
-void Solver::backToLevel(int level) {
+void Solver::cancelUntil(int level) {
   assert(trail_limit_.size() >= level);
   if (trail_limit_.size() == level) {
     return;
